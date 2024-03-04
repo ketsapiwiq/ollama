@@ -340,7 +340,10 @@ func getDefaultSessionDuration() time.Duration {
 }
 
 func (s *Server) EmbeddingsHandler(c *gin.Context) {
+	loaded.mu.Lock()
+	defer loaded.mu.Unlock()
 	var req api.EmbeddingRequest
+	fmt.Printf("req.Input: %v\n", c.Request.Body)
 	err := c.ShouldBindJSON(&req)
 	switch {
 	case errors.Is(err, io.EOF):
@@ -350,6 +353,7 @@ func (s *Server) EmbeddingsHandler(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	slog.Info("Got this far")
 
 	if req.Model == "" {
 		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "model is required"})
@@ -390,20 +394,38 @@ func (s *Server) EmbeddingsHandler(c *gin.Context) {
 	}
 
 	// an empty request loads the model
-	if req.Prompt == "" {
+	if req.Prompt.GetPrompt() == "" && req.Prompt.GetPrompts() == nil {
 		c.JSON(http.StatusOK, api.EmbeddingResponse{Embedding: []float64{}})
 		return
 	}
 
-	embedding, err := runner.llama.Embedding(c.Request.Context(), req.Prompt)
-	if err != nil {
-		slog.Info(fmt.Sprintf("embedding generation failed: %v", err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate embedding"})
-		return
+	var embedding []float64
+	var embeddings [][]float64
+	if req.Prompt.GetPrompt() != "" {
+		slog.Info("Single embedding")
+		embedding, err = runner.llama.Embedding(c.Request.Context(), req.Prompt.GetPrompt())
+		if err != nil {
+			slog.Info(fmt.Sprintf("embedding generation failed: %v", err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate embedding"})
+			return
+		}
+	} else {
+		embeddings = make([][]float64, 0)
+		for _, p := range req.Prompt.GetPrompts() {
+			slog.Info("Multi embedding " + p)
+			membedding, err := runner.llama.Embedding(c.Request.Context(), p)
+			if err != nil {
+				slog.Info(fmt.Sprintf("embedding generation failed: %v", err))
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate embedding"})
+				return
+			}
+			embeddings = append(embeddings, membedding)
+		}
 	}
 
 	resp := api.EmbeddingResponse{
-		Embedding: embedding,
+		Embedding:  embedding,
+		Embeddings: embeddings,
 	}
 	c.JSON(http.StatusOK, resp)
 }

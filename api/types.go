@@ -173,14 +173,61 @@ type Runner struct {
 	UseMLock  bool `json:"use_mlock,omitempty"`
 	NumThread int  `json:"num_thread,omitempty"`
 }
+type EmbeddingInput struct {
+	prompt  string
+	prompts []string
+}
+
+func (e *EmbeddingInput) IsEmpty() bool {
+	return e.prompt == "" && e.prompts == nil
+}
+
+func (e *EmbeddingInput) GetPrompt() string {
+	if e.prompt != "" {
+		return e.prompt
+	}
+	return ""
+}
+
+func (e *EmbeddingInput) GetPrompts() []string {
+	if e.prompts != nil {
+		return e.prompts
+	}
+	return nil
+}
+
+func (e *EmbeddingInput) UnmarshalJSON(b []byte) error {
+	fmt.Printf("Unmarshal")
+	// Try to unmarshal data into a single string
+	if err := json.Unmarshal(b, &e.prompt); err == nil {
+		return nil
+	}
+	// If the above fails, try to unmarshal data into an array of strings
+	if err := json.Unmarshal(b, &e.prompts); err == nil {
+		return nil
+	}
+	// Return error if neither unmarshalling succeeds
+	return fmt.Errorf("EmbeddingInput must be a string or an array of strings")
+}
+
+func (e *EmbeddingInput) MarshalJSON() ([]byte, error) {
+	fmt.Printf("e.Prompts: %v\n", e.prompts)
+	if e.prompt != "" {
+		return json.Marshal(e.prompt)
+	}
+	if e.prompts != nil {
+		return json.Marshal(e.prompts)
+	}
+	return nil, fmt.Errorf("EmbeddingInput has no data") // Or a more appropriate error
+}
 
 // EmbeddingRequest is the request passed to [Client.Embeddings].
 type EmbeddingRequest struct {
 	// Model is the model name.
 	Model string `json:"model"`
 
-	// Prompt is the textual prompt to embed.
-	Prompt string `json:"prompt"`
+	// Prompt is the array of textual prompts to embed.
+	Prompt    *EmbeddingInput `json:"prompt"`
 
 	// KeepAlive controls how long the model will stay loaded in memory following
 	// this request.
@@ -192,7 +239,8 @@ type EmbeddingRequest struct {
 
 // EmbeddingResponse is the response from [Client.Embeddings].
 type EmbeddingResponse struct {
-	Embedding []float64 `json:"embedding"`
+	Embedding  []float64   `json:"embedding,omitempty"`
+	Embeddings [][]float64 `json:"embeddings,omitempty"`
 }
 
 // CreateRequest is the request passed to [Client.Create].
